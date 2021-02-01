@@ -8,6 +8,7 @@ import {
   CellMeasurer,
   CellMeasurerCache,
   ListRowProps,
+  InfiniteLoaderChildProps,
 } from 'react-virtualized';
 
 import {
@@ -86,6 +87,8 @@ export default () => {
 
   // 编辑modal使用
   const [curRecrod, setCurRecord] = useState<Record>();
+
+  const infiniteRef = useRef<any>(null);
 
   useLayoutEffect(() => {
     const current = contentRef.current;
@@ -225,6 +228,7 @@ export default () => {
         default:
           console.error('invalidate type:', inputType);
       }
+      infiniteRef.current?.resetLoadMoreRowsCache(true);
     });
   }
 
@@ -271,23 +275,39 @@ export default () => {
 
     return (
       <CellMeasurer parent={parent} cache={cache} key={key} rowIndex={index}>
-        {({ registerChild, measure }) => (
-          <div style={style} key={key} ref={registerChild}>
-            {!isItemLoaded({ index }) ? (
-              'Loading...'
-            ) : (
-              <RecordItem
-                key={record._id}
-                record={record}
-                selected={selected}
-                onClick={onItemClick}
-                onEditClick={onItemEditClick}
-                onRemoveClick={onItemRemoveClick}
-              />
-            )}
-          </div>
-        )}
+        <div style={style} key={key}>
+          {!isItemLoaded({ index }) ? (
+            'Loading...'
+          ) : (
+            <RecordItem
+              key={record._id}
+              record={record}
+              selected={selected}
+              onClick={onItemClick}
+              onEditClick={onItemEditClick}
+              onRemoveClick={onItemRemoveClick}
+            />
+          )}
+        </div>
       </CellMeasurer>
+    );
+  }
+
+  function renderList({
+    onRowsRendered,
+    registerChild,
+  }: InfiniteLoaderChildProps) {
+    return (
+      <List
+        rowCount={total}
+        ref={registerChild}
+        width={contentRect?.width || 0}
+        height={contentRect?.height || 0}
+        onRowsRendered={onRowsRendered}
+        rowRenderer={renderItem}
+        deferredMeasurementCache={cache}
+        rowHeight={cache.rowHeight}
+      />
     );
   }
 
@@ -356,23 +376,9 @@ export default () => {
               itemCount={total}
               loadMoreRows={loadMoreItems}
               isRowLoaded={isItemLoaded}
+              ref={infiniteRef}
             >
-              {({ onRowsRendered, registerChild }) => (
-                <AutoSizer>
-                  {({ height, width }) => (
-                    <List
-                      rowCount={total}
-                      ref={registerChild}
-                      width={width}
-                      height={height}
-                      onRowsRendered={onRowsRendered}
-                      rowRenderer={renderItem}
-                      deferredMeasurementCache={cache}
-                      rowHeight={cache.rowHeight}
-                    />
-                  )}
-                </AutoSizer>
-              )}
+              {renderList}
             </InfiniteLoader>
           ) : (
             <CenterEmpty />
