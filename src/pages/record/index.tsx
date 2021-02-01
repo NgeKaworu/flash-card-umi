@@ -2,10 +2,13 @@ import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useHistory } from 'react-router';
 import { useInfiniteQuery, useQueryClient, useMutation } from 'react-query';
 import {
-  VariableSizeList as List,
-  ListOnItemsRenderedProps,
-} from 'react-window';
-import InfiniteLoader from 'react-window-infinite-loader';
+  List,
+  InfiniteLoader,
+  AutoSizer,
+  CellMeasurer,
+  CellMeasurerCache,
+  ListRowProps,
+} from 'react-virtualized';
 
 import {
   Empty,
@@ -59,9 +62,10 @@ const CenterEmpty = styled(Empty)`
 `;
 
 type inputType = '' | '新建' | '编辑';
-type OnItemsRendered = (props: ListOnItemsRenderedProps) => any;
 
 const limit = 10;
+
+const cache = new CellMeasurerCache();
 
 export default () => {
   const [sortForm] = Form.useForm();
@@ -253,93 +257,38 @@ export default () => {
 
   // Only load 1 page of items at a time.
   // Pass an empty callback to InfiniteLoader in case it asks us to load more than once.
-  const loadMoreItems = isFetching ? () => null : () => fetchNextPage();
+  const loadMoreItems = () => fetchNextPage();
 
   // Every row is loaded except for our loading indicator row.
   // const isItemLoaded = index => !hasNextPage || index < pages.length;
-  const isItemLoaded = (index: number) => !hasNextPage || index < pages?.length;
+  const isItemLoaded = ({ index }: { index: number }) =>
+    !hasNextPage || index < pages?.length;
 
   // Render an item or a loading indicator.
-  function renderItem({
-    index,
-    style,
-  }: {
-    index: number;
-    style: React.CSSProperties;
-  }) {
+  function renderItem({ index, style, key, parent }: ListRowProps) {
     const record = pages[index];
     const selected = selectedItems.some((s) => s === record?._id);
 
-    let content;
-    if (!isItemLoaded(index)) {
-      content = 'Loading...';
-    } else {
-      content = (
-        <RecordItem
-          key={record._id}
-          record={record}
-          selected={selected}
-          onClick={onItemClick}
-          onEditClick={onItemEditClick}
-          onRemoveClick={onItemRemoveClick}
-        />
-      );
-    }
-
-    return <div style={style}>{content}</div>;
-  }
-
-  // Render List
-  function renderList({
-    onItemsRendered,
-    ref,
-  }: {
-    onItemsRendered: OnItemsRendered;
-    ref: React.Ref<any>;
-  }) {
     return (
-      <List
-        style={{ paddingBottom: '12px' }}
-        height={contentRect?.height || 0}
-        width={'100%'}
-        itemCount={total}
-        onItemsRendered={onItemsRendered}
-        ref={ref}
-        itemSize={calcItemSize}
-      >
-        {renderItem}
-      </List>
+      <CellMeasurer parent={parent} cache={cache} key={key} rowIndex={index}>
+        {({ registerChild, measure }) => (
+          <div style={style} key={key} ref={registerChild}>
+            {!isItemLoaded({ index }) ? (
+              'Loading...'
+            ) : (
+              <RecordItem
+                key={record._id}
+                record={record}
+                selected={selected}
+                onClick={onItemClick}
+                onEditClick={onItemEditClick}
+                onRemoveClick={onItemRemoveClick}
+              />
+            )}
+          </div>
+        )}
+      </CellMeasurer>
     );
-  }
-
-  function calcItemSize(index: number) {
-    const record = pages[index];
-    console.log(index, record);
-    const width = contentRect?.width || 0;
-    const lineHeight = 22;
-    // 基本高度 = Item高度 - 两行文本内容 + padding
-    let baseHeight = 125 - lineHeight * 2 + 12;
-
-    // 基本宽度 = 屏幕宽度 - padding*2 - margin*2
-    const baseWidth = width - 12 * 2 - 12 * 2;
-    // 字号
-    const fontSize = 14;
-    // 原文 长度
-    const sl = record?.source?.length * fontSize || 1;
-    //译文 长度
-    const tl = record?.translation?.length * fontSize || 1;
-
-    // 总行数
-    const rowNums = Math.ceil(sl / baseWidth) + Math.ceil(tl / baseWidth);
-
-    let rowHeight = rowNums * lineHeight + baseHeight;
-
-    // 0.75为系数，全角字符是14px半角则是一半；
-    if (rowNums > 2) {
-      rowHeight *= 0.75;
-    }
-
-    return rowHeight;
   }
 
   return (
@@ -404,11 +353,26 @@ export default () => {
         <div style={{ width: '100%', height: '100%' }} ref={contentRef}>
           {pages?.length ? (
             <InfiniteLoader
-              isItemLoaded={isItemLoaded}
               itemCount={total}
-              loadMoreItems={loadMoreItems}
+              loadMoreRows={loadMoreItems}
+              isRowLoaded={isItemLoaded}
             >
-              {renderList}
+              {({ onRowsRendered, registerChild }) => (
+                <AutoSizer>
+                  {({ height, width }) => (
+                    <List
+                      rowCount={total}
+                      ref={registerChild}
+                      width={width}
+                      height={height}
+                      onRowsRendered={onRowsRendered}
+                      rowRenderer={renderItem}
+                      deferredMeasurementCache={cache}
+                      rowHeight={cache.rowHeight}
+                    />
+                  )}
+                </AutoSizer>
+              )}
             </InfiniteLoader>
           ) : (
             <CenterEmpty />
